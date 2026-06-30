@@ -14,6 +14,13 @@ generator template kode **SCL Siemens PCS 7**.
 - **Generator kode SCL PCS 7** — Function Block siap pakai untuk TIA Portal / STEP 7.
 - **Visualisasi real-time** — tangki dinamis + grafik Plotly (flow, rasio, warna, bukaan katup).
 
+## Dokumentasi & Alur Penggunaan
+
+- **[Panduan Lengkap (semua halaman & field)](docs/PANDUAN-LENGKAP.md)** — penjelasan detail tiap halaman, tombol, dan parameter.
+- **Diagram alur penggunaan:**
+
+![Diagram Alur Penggunaan](docs/alur-penggunaan.png)
+
 ## Struktur Proyek
 
 ```
@@ -26,6 +33,10 @@ cindy-project/
 │   └── cascade_control.py      # Model proses Cascade Control
 ├── assets/style.css            # Tema monokrom (UI)
 ├── .streamlit/config.toml      # Konfigurasi tema & server
+├── docs/
+│   ├── PANDUAN-LENGKAP.md       # Dokumentasi lengkap semua halaman & field
+│   ├── alur-penggunaan.png      # Diagram alur penggunaan (gambar)
+│   └── generate_flowchart.py    # Skrip pembuat diagram (matplotlib)
 └── requirements.txt            # Dependensi Python
 ```
 
