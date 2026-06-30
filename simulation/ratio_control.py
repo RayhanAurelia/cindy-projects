@@ -110,9 +110,16 @@ class RatioControlSimulation:
             
         self.ratio_history.append(mixing_ratio) # Queue simulating piping transport delay (dead time)
         
-        # Delayed measurement at the downstream sensor node
+        # Delayed measurement at the downstream sensor node (fraction: pewarna / total)
         delayed_ratio = self.ratio_history[0]
-        
+
+        # Konversi fraksi (pewarna/total) -> rasio kendali (pewarna/susu) agar sebasis
+        # dengan Target Rasio, sehingga grafik "Rasio Aktual vs Target" valid untuk analisis
+        if delayed_ratio < 0.999:
+            actual_ratio_cm = delayed_ratio / (1.0 - delayed_ratio)
+        else:
+            actual_ratio_cm = delayed_ratio
+
         # TCS3200 Color Sensor: Translates delayed mixing ratio to frequency/intensity output
         # Process Variable (PV) representing the final mixed quality validator
         self.sensor_color_reading = min(255.0, delayed_ratio * 1000.0)
@@ -131,7 +138,7 @@ class RatioControlSimulation:
         self.history["valve_position"].append(self.valve_position)
         self.history["valve_output"].append(self.valve_output)
         self.history["target_ratio"].append(self.target_ratio)
-        self.history["actual_ratio"].append(delayed_ratio)
+        self.history["actual_ratio"].append(actual_ratio_cm)
         self.history["sensor_color"].append(self.sensor_color_reading)
         self.history["validation_ok"].append(validation_ok)
         

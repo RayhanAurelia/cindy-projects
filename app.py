@@ -1,5 +1,6 @@
 import streamlit as st
 import time
+import datetime
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -35,12 +36,19 @@ st.components.v1.html(
     <script>
     const parentDoc = window.parent.document;
     parentDoc.addEventListener("keydown", function(e) {
-        // Block standalone 'c' or 'r' from reaching Streamlit's key handlers
-        if ((e.key.toLowerCase() === 'c' || e.key.toLowerCase() === 'r') && !e.ctrlKey && !e.metaKey && !e.altKey) {
-            const active = parentDoc.activeElement;
-            if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) {
-                return;
-            }
+        const k = e.key.toLowerCase();
+        const active = parentDoc.activeElement;
+        const inField = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable);
+        if (inField) return;
+
+        // Ctrl/Cmd + C : izinkan salin native, tapi cegah shortcut Streamlit (Clear Caches)
+        if ((e.ctrlKey || e.metaKey) && k === 'c') {
+            e.stopImmediatePropagation();   // hentikan ke handler Streamlit
+            return;                         // TANPA preventDefault -> copy tetap berjalan
+        }
+
+        // Tombol 'c' atau 'r' polos : blokir shortcut Clear Caches / Rerun
+        if ((k === 'c' || k === 'r') && !e.ctrlKey && !e.metaKey && !e.altKey) {
             e.stopImmediatePropagation();
             e.preventDefault();
         }
@@ -60,8 +68,12 @@ if "sim_running" not in st.session_state:
     st.session_state.sim_running = False
 if "current_page" not in st.session_state:
     st.session_state.current_page = "ratio"
+if "test_history" not in st.session_state:
+    st.session_state.test_history = []   # Riwayat hasil pengujian yang disimpan
 
 # Initialize session state variables for Ratio Control sliders
+if "ratio_milk_input" not in st.session_state:
+    st.session_state.ratio_milk_input = 50.0
 if "ratio_target_ratio" not in st.session_state:
     st.session_state.ratio_target_ratio = 0.10
 if "ratio_mode" not in st.session_state:
@@ -108,6 +120,7 @@ btn_ratio_type = "primary" if st.session_state.current_page == "ratio" else "sec
 btn_cascade_type = "primary" if st.session_state.current_page == "cascade" else "secondary"
 btn_scl_type = "primary" if st.session_state.current_page == "scl" else "secondary"
 btn_handbook_type = "primary" if st.session_state.current_page == "handbook" else "secondary"
+btn_history_type = "primary" if st.session_state.current_page == "history" else "secondary"
 
 if st.sidebar.button("Sistem Kontrol Rasio", type=btn_ratio_type, icon=":material/monitoring:", use_container_width=True):
     st.session_state.current_page = "ratio"
@@ -123,6 +136,10 @@ if st.sidebar.button("Template Kode SCL PCS 7", type=btn_scl_type, icon=":materi
 
 if st.sidebar.button("Panduan Sistem Kontrol", type=btn_handbook_type, icon=":material/menu_book:", use_container_width=True):
     st.session_state.current_page = "handbook"
+    st.rerun()
+
+if st.sidebar.button("Riwayat Pengujian", type=btn_history_type, icon=":material/history:", use_container_width=True):
+    st.session_state.current_page = "history"
     st.rerun()
 
 st.sidebar.markdown("---")
@@ -156,6 +173,49 @@ def apply_cascade_preset(color, kp_out, ki_out, kd_out, kp_in, ki_in, kd_in, dis
     st.session_state.cascade_dist_pressure = dist_press
     st.session_state.cascade_mode = "Auto (Cascade PID)"
     st.session_state.sim_running = True
+
+# ----------------------------------------------------
+# Helper: simpan hasil pengujian ke Riwayat (dipanggil tombol "End & Simpan")
+# ----------------------------------------------------
+def save_test_result(sim, control_type, params, param_str):
+    """Ambil snapshot data simulasi + hitung metrik performa, lalu simpan ke riwayat."""
+    hist = sim.history
+    n = len(hist["time"])
+    if n == 0:
+        return False  # Tidak ada data untuk disimpan
+
+    data = {k: list(v) for k, v in hist.items()}  # Salin agar tidak terhapus saat reset
+
+    # Hitung metrik performa untuk analisis kestabilan
+    val_pct = 100.0 * (sum(data["validation_ok"]) / n)
+    if control_type == "Ratio":
+        # Mean Absolute Error antara aliran pewarna aktual dan setpoint-nya
+        err = np.abs(np.array(data["colorant_flow"]) - np.array(data["colorant_flow_sp"]))
+        mae_label = "MAE Aliran (L/min)"
+    else:
+        # Mean Absolute Error antara warna terukur dan target warna
+        err = np.abs(np.array(data["sensor_color"]) - np.array(data["target_color"]))
+        mae_label = "MAE Warna"
+    mae = float(np.mean(err))
+
+    record = {
+        "id": st.session_state.get("history_counter", 0) + 1,
+        "timestamp": datetime.datetime.now().strftime("%d %b %Y, %H:%M:%S"),
+        "type": control_type,
+        "params": params,
+        "param_str": param_str,
+        "data": data,
+        "summary": {
+            "durasi": round(data["time"][-1], 1),
+            "mae": round(mae, 3),
+            "mae_label": mae_label,
+            "val_pct": round(val_pct, 1),
+            "n": n,
+        },
+    }
+    st.session_state.history_counter = record["id"]
+    st.session_state.test_history.append(record)
+    return True
 
 # ----------------------------------------------------
 # PAGE: RATIO CONTROL
@@ -201,20 +261,60 @@ if st.session_state.current_page == "ratio":
         with st.container(border=True):
             st.markdown("<h4 style='margin-top:0; font-weight: 600;'>Parameter Kontrol</h4>", unsafe_allow_html=True)
             
-            target_ratio = st.slider("Target Rasio (Pewarna : Susu)", 0.02, 0.20, key="ratio_target_ratio")
+            milk_input = st.slider(
+                "Flow Susu Input (Nominal) [L/min]", 20.0, 90.0, key="ratio_milk_input", step=1.0,
+                help="Flow_Susu_Input — laju aliran susu nominal (Wild Flow / PV). "
+                     "Setpoint pewarna mengikuti nilai ini: SP = K_ratio × laju susu. "
+                     "Saat 'Fluktuasi Laju Susu Ekstrem' aktif, nilai ini di-override oleh step disturbance."
+            )
+            st.caption("Laju susu masuk (Wild Flow). **↑** → setpoint & aliran pewarna ikut naik proporsional; **↓** → ikut turun.")
+            sim.nominal_milk_flow = milk_input
+
+            target_ratio = st.slider(
+                "Target Rasio (Pewarna : Susu)", 0.02, 0.20, key="ratio_target_ratio",
+                help="K_ratio = perbandingan laju Pewarna terhadap Susu. "
+                     "Setpoint aliran pewarna dihitung otomatis: SP = K_ratio × laju susu. "
+                     "Mis. 0.10 berarti pewarna = 10% dari laju susu."
+            )
+            st.caption("Perbandingan pewarna : susu (setpoint utama). **↑ rasio** → warna campuran makin pekat; **↓** → makin terang.")
             sim.target_ratio = target_ratio
-            
-            auto_mode = st.radio("Mode Operasi:", ["Auto (PID)", "Manual"], key="ratio_mode") == "Auto (PID)"
-            
+
+            auto_mode = st.radio(
+                "Mode Operasi:", ["Auto (PID)", "Manual"], key="ratio_mode",
+                help="Auto = PID otomatis mengatur bukaan katup agar rasio sesuai target. "
+                     "Manual = bukaan katup diatur sendiri (untuk uji open-loop)."
+            ) == "Auto (PID)"
+            st.caption("**Auto**: PID mengatur katup otomatis. **Manual**: katup diatur sendiri (uji tanpa kendali).")
+
             manual_valve = 0.0
             if not auto_mode:
-                manual_valve = st.slider("Bukaan Katup Manual (%)", 0.0, 100.0, float(sim.valve_output), 1.0)
-                
+                manual_valve = st.slider(
+                    "Bukaan Katup Manual (%)", 0.0, 100.0, float(sim.valve_output), 1.0,
+                    help="Posisi katup pewarna yang dipaksa secara manual (0% tertutup, 100% terbuka penuh)."
+                )
+                st.caption("Paksa bukaan katup pewarna. **↑ %** → aliran pewarna bertambah; **0%** → katup tertutup.")
+
             st.markdown("---")
             st.markdown("<h5 style='font-weight: 600; margin-bottom: 5px;'>Tuning PID (Slave Flow)</h5>", unsafe_allow_html=True)
-            kp = st.slider("Kp (Proportional)", 0.1, 10.0, key="ratio_kp")
-            ki = st.slider("Ki (Integral)", 0.0, 5.0, key="ratio_ki")
-            kd = st.slider("Kd (Derivative)", 0.0, 2.0, key="ratio_kd")
+            st.caption("Mengatur seberapa agresif katup pewarna mengejar setpoint aliran.")
+            kp = st.slider(
+                "Kp (Proportional)", 0.1, 10.0, key="ratio_kp",
+                help="Proportional Gain — penguatan sebanding besar error (setpoint − aliran aktual). "
+                     "Makin besar: respons makin cepat/agresif, tapi rawan overshoot & osilasi."
+            )
+            st.caption("Penguatan sebanding error. **↑ Kp** → koreksi lebih cepat tapi rawan *overshoot*/osilasi; **↓** → lambat tapi halus.")
+            ki = st.slider(
+                "Ki (Integral)", 0.0, 5.0, key="ratio_ki",
+                help="Integral Gain — mengakumulasi error dari waktu ke waktu untuk menghapus "
+                     "sisa error permanen (steady-state error/offset). Terlalu besar memperlambat & bikin osilasi."
+            )
+            st.caption("Menghapus sisa error tetap (*offset*). **↑ Ki** → offset cepat hilang tapi rawan osilasi; **↓** → bisa tersisa error permanen.")
+            kd = st.slider(
+                "Kd (Derivative)", 0.0, 2.0, key="ratio_kd",
+                help="Derivative Gain — bereaksi pada laju perubahan pengukuran (derivative-on-measurement) "
+                     "untuk meredam overshoot. Terlalu besar memperkuat noise sensor."
+            )
+            st.caption("Meredam berdasarkan laju perubahan. **↑ Kd** → *overshoot* teredam tapi noise menguat; **↓** → kurang redaman.")
             sim.set_pid_params(kp, ki, kd)
             
             st.markdown("---")
@@ -228,24 +328,39 @@ if st.session_state.current_page == "ratio":
             st.markdown("---")
             btn_col1, btn_col2 = st.columns(2)
             with btn_col1:
-                if st.button("Start", use_container_width=True):
+                if st.button("Start", icon=":material/play_arrow:", type="primary", use_container_width=True):
                     st.session_state.sim_running = True
                     st.rerun()
             with btn_col2:
-                if st.button("Pause", use_container_width=True):
+                if st.button("Pause", icon=":material/pause:", use_container_width=True):
                     st.session_state.sim_running = False
                     st.rerun()
-                    
-            if st.button("Reset Jalur", use_container_width=True):
-                sim.reset()
-                st.session_state.sim_running = False
-                st.rerun()
-                
+
+            ctrl_col1, ctrl_col2 = st.columns(2)
+            with ctrl_col1:
+                if st.button("End & Simpan", icon=":material/stop_circle:", use_container_width=True):
+                    param_str = f"Rasio={target_ratio:.2f}, Kp={kp}, Ki={ki}, Kd={kd}"
+                    saved = save_test_result(
+                        sim, "Ratio",
+                        {"Target Rasio": target_ratio, "Kp": kp, "Ki": ki, "Kd": kd,
+                         "Gangguan Susu": dist_milk, "Katup Tersumbat": dist_clog},
+                        param_str
+                    )
+                    st.session_state.sim_running = False
+                    st.toast("Hasil pengujian disimpan ke Riwayat." if saved
+                             else "Belum ada data simulasi untuk disimpan.")
+                    st.rerun()
+            with ctrl_col2:
+                if st.button("Reset Jalur", icon=":material/restart_alt:", use_container_width=True):
+                    sim.reset()
+                    st.session_state.sim_running = False
+                    st.rerun()
+
     # Advance simulation if active
     if st.session_state.sim_running:
         for _ in range(5):
             sim.step(dt=0.1, auto_mode=auto_mode, manual_valve_input=manual_valve)
-            
+
     # Right Column: Visuals & Charts
     with col2:
         curr_milk = sim.milk_flow
@@ -253,7 +368,7 @@ if st.session_state.current_page == "ratio":
         curr_sp = sim.colorant_flow_sp
         curr_color = sim.sensor_color_reading
         curr_valv = sim.valve_position
-        
+
         target_color = (target_ratio / (1.0 + target_ratio)) * 1000.0
         diff = abs(curr_color - target_color)
         is_ok = diff <= (target_color * 0.10)
@@ -393,7 +508,7 @@ if st.session_state.current_page == "ratio":
             )
             st.plotly_chart(fig2, use_container_width=True)
         else:
-            st.info("Tekan tombol '▶ Start' atau klik salah satu Preset di kiri untuk menjalankan simulasi")
+            st.info("Tekan tombol **Start** atau klik salah satu Preset di panel kiri untuk menjalankan simulasi.", icon=":material/info:")
 
 # ----------------------------------------------------
 # PAGE: CASCADE CONTROL
@@ -439,26 +554,68 @@ elif st.session_state.current_page == "cascade":
         with st.container(border=True):
             st.markdown("<h4 style='margin-top:0; font-weight: 600;'>Parameter Kontrol</h4>", unsafe_allow_html=True)
             
-            target_color = st.slider("Target Intensitas Warna (0-200)", 20.0, 200.0, key="cascade_target_color")
+            target_color = st.slider(
+                "Target Intensitas Warna (0-200)", 20.0, 200.0, key="cascade_target_color",
+                help="Setpoint utama (SP) sistem: nilai intensitas warna produk akhir yang dibaca "
+                     "sensor TCS3200. Loop luar berusaha menjaga warna campuran sama dengan nilai ini."
+            )
+            st.caption("Setpoint warna produk akhir (dibaca TCS3200). **↑ nilai** → produk makin gelap; **↓** → makin terang.")
             sim.target_color = target_color
-            
-            auto_mode = st.radio("Mode Operasi:", ["Auto (Cascade PID)", "Manual"], key="cascade_mode") == "Auto (Cascade PID)"
-            
+
+            auto_mode = st.radio(
+                "Mode Operasi:", ["Auto (Cascade PID)", "Manual"], key="cascade_mode",
+                help="Auto = dua loop PID (warna→aliran) bekerja bertingkat otomatis. "
+                     "Manual = bukaan katup diatur sendiri."
+            ) == "Auto (Cascade PID)"
+            st.caption("**Auto**: dua loop PID (warna → aliran) bekerja bertingkat. **Manual**: katup diatur sendiri.")
+
             manual_valve = 0.0
             if not auto_mode:
-                manual_valve = st.slider("Bukaan Katup Manual (%)", 0.0, 100.0, float(sim.valve_output), 1.0)
-                
+                manual_valve = st.slider(
+                    "Bukaan Katup Manual (%)", 0.0, 100.0, float(sim.valve_output), 1.0,
+                    help="Posisi katup pewarna yang dipaksa manual (0% tertutup, 100% terbuka penuh)."
+                )
+                st.caption("Paksa bukaan katup pewarna. **↑ %** → aliran pewarna bertambah; **0%** → katup tertutup.")
+
             st.markdown("---")
             st.markdown("<h5 style='font-weight: 600; margin-bottom: 5px;'>Loop Luar (Primary - Color)</h5>", unsafe_allow_html=True)
-            kp_out = st.slider("Kp (Outer)", 0.01, 1.0, key="cas_kp_out")
-            ki_out = st.slider("Ki (Outer)", 0.0, 0.5, key="cas_ki_out")
-            kd_out = st.slider("Kd (Outer)", 0.0, 0.2, key="cas_kd_out")
-            
+            st.caption("Loop lambat: membaca warna TCS3200 (PV) → menghasilkan setpoint laju pewarna untuk loop dalam.")
+            kp_out = st.slider(
+                "Kp (Outer)", 0.01, 1.0, key="cas_kp_out",
+                help="Proportional Gain Loop Luar — penguatan error warna (target − warna terukur). "
+                     "Outputnya menjadi target laju aliran pewarna. Dibuat kecil karena ada transport delay."
+            )
+            st.caption("Penguatan error warna. **↑ Kp** → loop warna agresif tapi rawan osilasi (ada *dead time*); **↓** → lambat tapi stabil.")
+            ki_out = st.slider(
+                "Ki (Outer)", 0.0, 0.5, key="cas_ki_out",
+                help="Integral Gain Loop Luar — menghapus offset warna akhir agar benar-benar mencapai target."
+            )
+            st.caption("Menghapus *offset* warna akhir. **↑ Ki** → target warna cepat tercapai tapi rawan osilasi lambat; **↓** → bisa sisa selisih warna.")
+            kd_out = st.slider(
+                "Kd (Outer)", 0.0, 0.2, key="cas_kd_out",
+                help="Derivative Gain Loop Luar — meredam osilasi warna akibat keterlambatan (dead time) sensor."
+            )
+            st.caption("Meredam osilasi warna. **↑ Kd** → ayunan warna lebih kalem; terlalu besar → noise sensor menguat.")
+
             st.markdown("<h5 style='font-weight: 600; margin-bottom: 5px;'>Loop Dalam (Secondary - Flow)</h5>", unsafe_allow_html=True)
-            kp_in = st.slider("Kp (Inner)", 0.1, 10.0, key="cas_kp_in")
-            ki_in = st.slider("Ki (Inner)", 0.0, 5.0, key="cas_ki_in")
-            kd_in = st.slider("Kd (Inner)", 0.0, 2.0, key="cas_kd_in")
-            
+            st.caption("Loop cepat: membaca laju pewarna (PV) → mengatur katup mengejar setpoint dari loop luar.")
+            kp_in = st.slider(
+                "Kp (Inner)", 0.1, 10.0, key="cas_kp_in",
+                help="Proportional Gain Loop Dalam — penguatan error aliran (setpoint loop luar − laju aktual). "
+                     "Dibuat besar/agresif agar cepat meredam gangguan tekanan sebelum mempengaruhi warna."
+            )
+            st.caption("Penguatan error aliran. **↑ Kp** → aliran cepat ikut target & gangguan tekanan teredam, tapi rawan osilasi; **↓** → lambat.")
+            ki_in = st.slider(
+                "Ki (Inner)", 0.0, 5.0, key="cas_ki_in",
+                help="Integral Gain Loop Dalam — menghapus sisa error laju aliran pewarna."
+            )
+            st.caption("Menghapus sisa error laju aliran. **↑ Ki** → laju tepat ke setpoint tapi rawan osilasi; **↓** → bisa tersisa selisih.")
+            kd_in = st.slider(
+                "Kd (Inner)", 0.0, 2.0, key="cas_kd_in",
+                help="Derivative Gain Loop Dalam — meredam lonjakan aliran (derivative-on-measurement)."
+            )
+            st.caption("Meredam lonjakan aliran. **↑ Kd** → respons lebih halus; terlalu besar → memperkuat noise pengukuran.")
+
             sim.set_pid_params(kp_out, ki_out, kd_out, kp_in, ki_in, kd_in)
             
             st.markdown("---")
@@ -472,24 +629,42 @@ elif st.session_state.current_page == "cascade":
             st.markdown("---")
             btn_col1, btn_col2 = st.columns(2)
             with btn_col1:
-                if st.button("Start", use_container_width=True):
+                if st.button("Start", icon=":material/play_arrow:", type="primary", use_container_width=True):
                     st.session_state.sim_running = True
                     st.rerun()
             with btn_col2:
-                if st.button("Pause", use_container_width=True):
+                if st.button("Pause", icon=":material/pause:", use_container_width=True):
                     st.session_state.sim_running = False
                     st.rerun()
-                    
-            if st.button("Reset Jalur", use_container_width=True):
-                sim.reset()
-                st.session_state.sim_running = False
-                st.rerun()
-                
+
+            ctrl_col1, ctrl_col2 = st.columns(2)
+            with ctrl_col1:
+                if st.button("End & Simpan", icon=":material/stop_circle:", use_container_width=True):
+                    param_str = (f"Warna={target_color:.0f}, Kp_o={kp_out}, Ki_o={ki_out}, "
+                                 f"Kd_o={kd_out}, Kp_i={kp_in}, Ki_i={ki_in}, Kd_i={kd_in}")
+                    saved = save_test_result(
+                        sim, "Cascade",
+                        {"Target Warna": target_color,
+                         "Kp Outer": kp_out, "Ki Outer": ki_out, "Kd Outer": kd_out,
+                         "Kp Inner": kp_in, "Ki Inner": ki_in, "Kd Inner": kd_in,
+                         "Gangguan Susu": dist_milk, "Tekanan Drop": dist_pressure},
+                        param_str
+                    )
+                    st.session_state.sim_running = False
+                    st.toast("Hasil pengujian disimpan ke Riwayat." if saved
+                             else "Belum ada data simulasi untuk disimpan.")
+                    st.rerun()
+            with ctrl_col2:
+                if st.button("Reset Jalur", icon=":material/restart_alt:", use_container_width=True):
+                    sim.reset()
+                    st.session_state.sim_running = False
+                    st.rerun()
+
     # Advance simulation if active
     if st.session_state.sim_running:
         for _ in range(5):
             sim.step(dt=0.1, auto_mode=auto_mode, manual_valve_input=manual_valve)
-            
+
     # Right Column: Visuals & Charts
     with col2:
         curr_milk = sim.milk_flow
@@ -497,7 +672,7 @@ elif st.session_state.current_page == "cascade":
         curr_sp = sim.colorant_flow_sp
         curr_color = sim.sensor_color_reading
         curr_valv = sim.valve_position
-        
+
         is_ok = abs(curr_color - target_color) <= max(3.0, target_color * 0.05)
         
         # Display Metrics Cards
@@ -651,7 +826,7 @@ elif st.session_state.current_page == "cascade":
             )
             st.plotly_chart(fig3, use_container_width=True)
         else:
-            st.info("Tekan tombol '▶ Start' atau klik salah satu Preset di kiri untuk menjalankan simulasi")
+            st.info("Tekan tombol **Start** atau klik salah satu Preset di panel kiri untuk menjalankan simulasi.", icon=":material/info:")
 
 
 elif st.session_state.current_page == "scl":
@@ -720,11 +895,159 @@ elif st.session_state.current_page == "handbook":
     
     - **Mengapa ini lebih baik?**
       Jika tekanan pasokan pewarna tiba-tiba turun, loop dalam (aliran) akan langsung mendeteksi penurunan laju aliran pewarna dan langsung membuka katup lebih lebar. Loop luar tidak perlu menunggu warna campuran yang salah sampai ke sensor warna downstream untuk melakukan koreksi.
+
+    ---
+
+    ### 3. Implementasi Algoritma PID (sesuai kode simulator)
+
+    Setiap loop memakai PID diskret dengan periode cuplik (sample time) **Cycle = 0.1 s**:
+
+    ```
+    Error   = Setpoint − PV
+    P       = Kp × Error
+    Integral = Integral + Error × Cycle ;  I = Ki × Integral
+    D       = −Kd × (PV − PV_sebelumnya) / Cycle      (Derivative on Measurement)
+    Output  = P + I + D   (dibatasi/clamp 0–100% untuk katup)
+    ```
+
+    - **Kp (Proportional)** — penguatan sebanding besar error. Cepat tapi rawan overshoot.
+    - **Ki (Integral)** — menghapus *offset*/steady-state error dengan mengakumulasi error.
+    - **Kd (Derivative)** — meredam dengan melihat laju perubahan. Memakai **Derivative on Measurement** (turunan dari PV, bukan error) agar tidak terjadi *derivative kick* saat setpoint berubah dan tidak memperkuat noise.
+    - **Anti-Windup** — saat output katup tersaturasi (0% atau 100%), akumulasi integral di-*clamp* (dikembalikan) agar tidak menumpuk dan memperlambat pemulihan.
+
+    > Catatan: template kode SCL Siemens PCS 7 pada halaman *Template Kode* menggunakan algoritma yang sama persis, sehingga simulator dan PLC konsisten.
     """)
+
+# ----------------------------------------------------
+# PAGE: HISTORY (Riwayat Pengujian)
+# ----------------------------------------------------
+elif st.session_state.current_page == "history":
+    st.markdown("<h1 style='color: #0f172a; font-weight: 700;'>Riwayat Pengujian</h1>", unsafe_allow_html=True)
+    st.markdown(
+        "Kumpulan hasil simulasi yang disimpan via tombol **End & Simpan**. "
+        "Setiap entri menyimpan parameter, metrik performa, tabel data lengkap, dan grafiknya untuk dianalisis."
+    )
+    st.markdown("---")
+
+    history = st.session_state.test_history
+
+    if not history:
+        st.info(
+            "Belum ada hasil pengujian tersimpan. Jalankan simulasi pada halaman Ratio/Cascade, "
+            "lalu tekan tombol **End & Simpan** untuk merekam hasilnya ke sini.",
+            icon=":material/history:"
+        )
+    else:
+        # --- Tabel ringkasan seluruh pengujian ---
+        st.markdown("<h3 style='font-weight: 600;'>Ringkasan Seluruh Pengujian</h3>", unsafe_allow_html=True)
+        rows = []
+        for rec in history:
+            s = rec["summary"]
+            rows.append({
+                "ID": rec["id"],
+                "Waktu": rec["timestamp"],
+                "Jenis": rec["type"],
+                "Durasi (s)": s["durasi"],
+                "Jumlah Data": s["n"],
+                s["mae_label"] if rec["type"] == "Ratio" else "MAE": s["mae"],
+                "Validasi OK (%)": s["val_pct"],
+                "Parameter": rec["param_str"],
+            })
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+        c_clear, _ = st.columns([1, 3])
+        with c_clear:
+            if st.button("Hapus Semua Riwayat", icon=":material/delete:", use_container_width=True):
+                st.session_state.test_history = []
+                st.toast("Seluruh riwayat pengujian dihapus.")
+                st.rerun()
+
+        st.markdown("---")
+
+        # --- Detail satu pengujian ---
+        st.markdown("<h3 style='font-weight: 600;'>Detail Pengujian</h3>", unsafe_allow_html=True)
+        options = {f"#{rec['id']} — {rec['type']} ({rec['timestamp']})": rec["id"] for rec in reversed(history)}
+        selected_label = st.selectbox("Pilih pengujian:", list(options.keys()))
+        selected_id = options[selected_label]
+        rec = next(r for r in history if r["id"] == selected_id)
+        data = rec["data"]
+        s = rec["summary"]
+
+        # Kartu metrik performa
+        mc1, mc2, mc3, mc4 = st.columns(4)
+        with mc1:
+            st.markdown(f"<div class='metric-card'><div class='metric-title'>Jenis Kontrol</div>"
+                        f"<div class='metric-value' style='font-size:1.6rem;'>{rec['type']}</div>"
+                        f"<div class='metric-unit'>{s['n']} titik data</div></div>", unsafe_allow_html=True)
+        with mc2:
+            st.markdown(f"<div class='metric-card'><div class='metric-title'>Durasi Uji</div>"
+                        f"<div class='metric-value'>{s['durasi']}</div>"
+                        f"<div class='metric-unit'>detik simulasi</div></div>", unsafe_allow_html=True)
+        with mc3:
+            st.markdown(f"<div class='metric-card'><div class='metric-title'>{s['mae_label']}</div>"
+                        f"<div class='metric-value'>{s['mae']}</div>"
+                        f"<div class='metric-unit'>rata-rata error absolut</div></div>", unsafe_allow_html=True)
+        with mc4:
+            badge = "status-ok" if s["val_pct"] >= 70 else "status-error"
+            st.markdown(f"<div class='metric-card'><div class='metric-title'>Validasi Lolos</div>"
+                        f"<div class='metric-value'>{s['val_pct']}%</div>"
+                        f"<div class='metric-unit'><span class='status-badge {badge}'>TCS3200</span></div></div>",
+                        unsafe_allow_html=True)
+
+        # Parameter yang digunakan
+        with st.expander("Parameter yang digunakan", expanded=False):
+            st.json(rec["params"])
+
+        df = pd.DataFrame(data)
+
+        # Grafik sesuai jenis kontrol
+        st.markdown("<h4 style='font-weight: 600; margin-top:10px;'>Grafik Hasil Pengujian</h4>", unsafe_allow_html=True)
+        if rec["type"] == "Ratio":
+            figh = go.Figure()
+            figh.add_trace(go.Scatter(x=df["time"], y=df["milk_flow"], mode='lines', name='Aliran Susu (L/min)', line=dict(color='#0f172a', width=2)))
+            figh.add_trace(go.Scatter(x=df["time"], y=df["colorant_flow"], mode='lines', name='Aliran Pewarna (L/min)', line=dict(color='#64748b', width=2.5)))
+            figh.add_trace(go.Scatter(x=df["time"], y=df["colorant_flow_sp"], mode='lines', name='Setpoint Pewarna', line=dict(color='#94a3b8', width=1.5, dash='dash')))
+            figh.update_layout(title="Laju Aliran Bahan", xaxis_title="Waktu (detik)", yaxis_title="L/min",
+                               template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=40, r=40, t=45, b=40))
+            st.plotly_chart(figh, use_container_width=True)
+
+            figh2 = go.Figure()
+            figh2.add_trace(go.Scatter(x=df["time"], y=df["actual_ratio"]*100, mode='lines', name='Rasio Aktual (%)', line=dict(color='#0f172a', width=2)))
+            figh2.add_trace(go.Scatter(x=df["time"], y=df["target_ratio"]*100, mode='lines', name='Target Rasio (%)', line=dict(color='#94a3b8', width=1.5, dash='dash')))
+            figh2.update_layout(title="Rasio Aktual vs Target", xaxis_title="Waktu (detik)", yaxis_title="Rasio (%)",
+                                template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=40, r=40, t=45, b=40))
+            st.plotly_chart(figh2, use_container_width=True)
+        else:
+            figh = go.Figure()
+            figh.add_trace(go.Scatter(x=df["time"], y=df["sensor_color"], mode='lines', name='Warna Sensor TCS3200', line=dict(color='#0f172a', width=2.5)))
+            figh.add_trace(go.Scatter(x=df["time"], y=df["target_color"], mode='lines', name='Target Warna', line=dict(color='#94a3b8', width=1.5, dash='dash')))
+            figh.update_layout(title="Kontrol Kualitas Warna", xaxis_title="Waktu (detik)", yaxis_title="Nilai Warna",
+                               template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=40, r=40, t=45, b=40))
+            st.plotly_chart(figh, use_container_width=True)
+
+            figh2 = go.Figure()
+            figh2.add_trace(go.Scatter(x=df["time"], y=df["colorant_flow"], mode='lines', name='Aliran Pewarna (L/min)', line=dict(color='#64748b', width=2.5)))
+            figh2.add_trace(go.Scatter(x=df["time"], y=df["colorant_flow_sp"], mode='lines', name='Setpoint Aliran', line=dict(color='#94a3b8', width=1.5, dash='dash')))
+            figh2.add_trace(go.Scatter(x=df["time"], y=df["valve_position"], mode='lines', name='Bukaan Katup (%)', line=dict(color='#0f172a', width=2)))
+            figh2.update_layout(title="Aliran Pewarna & Bukaan Katup", xaxis_title="Waktu (detik)", yaxis_title="Nilai",
+                                template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=40, r=40, t=45, b=40))
+            st.plotly_chart(figh2, use_container_width=True)
+
+        # Tabel data lengkap + unduh CSV
+        st.markdown("<h4 style='font-weight: 600;'>Tabel Data Lengkap</h4>", unsafe_allow_html=True)
+        df_show = df.round(3)
+        st.dataframe(df_show, use_container_width=True, height=300)
+        st.download_button(
+            "Unduh Data (CSV)",
+            data=df_show.to_csv(index=False).encode("utf-8"),
+            file_name=f"pengujian_{rec['type']}_{rec['id']}.csv",
+            mime="text/csv",
+            icon=":material/download:"
+        )
 
 # ----------------------------------------------------
 # bottom of file rerun trigger for real-time simulation
 # ----------------------------------------------------
-if st.session_state.sim_running:
+if st.session_state.sim_running and st.session_state.current_page in ("ratio", "cascade"):
     time.sleep(0.08)
     st.rerun()

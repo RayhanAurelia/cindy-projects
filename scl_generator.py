@@ -26,9 +26,9 @@ END_VAR
 
 VAR
     // Variabel internal PID
-    Error_Prev    : REAL := 0.0;
+    PV_Prev       : REAL := 0.0;  // Pengukuran (PV) sebelumnya - utk Derivative on Measurement
     Integral_Sum  : REAL := 0.0;
-    
+
     // Variabel simulasi TCS3200 (untuk verifikasi)
     Sensor_Color  : REAL;
     Target_Color  : REAL;
@@ -62,9 +62,10 @@ BEGIN
         Integral_Sum := Integral_Sum + (Error * Cycle);
         I_Term := Ki * Integral_Sum;
         
-        // Derivative Term
-        D_Term := Kd * (Error - Error_Prev) / Cycle;
-        
+        // Derivative on Measurement: derivatif dihitung dari perubahan PV, bukan error.
+        // Mencegah "derivative kick" saat Setpoint (SlaveFlow_SP) berubah mengikuti laju susu.
+        D_Term := -Kd * (PV_SlaveFlow - PV_Prev) / Cycle;
+
         // Total output controller
         PID_Out := P_Term + I_Term + D_Term;
         
@@ -79,10 +80,10 @@ BEGIN
         ELSE
             Valve_Out := PID_Out;
         END_IF;
-        
-        Error_Prev := Error;
+
+        PV_Prev := PV_SlaveFlow;  // Simpan PV untuk perhitungan derivatif siklus berikutnya
     END_IF;
-    
+
     // 3. Validasi Konsentrasi Warna (Logika simulasi sensor TCS3200)
     // Dalam implementasi nyata, pembacaan sensor warna diperoleh dari modul input terpisah.
     // Asumsi: Sensor TCS3200 menghasilkan sinyal warna sebanding dengan rasio volume.
@@ -139,11 +140,11 @@ END_VAR
 
 VAR
     // Variabel internal Outer PID (Warna)
-    Err_Outer_Prev : REAL := 0.0;
+    PV_Color_Prev  : REAL := 0.0;  // PV warna sebelumnya - Derivative on Measurement
     Int_Outer_Sum  : REAL := 0.0;
-    
+
     // Variabel internal Inner PID (Aliran)
-    Err_Inner_Prev : REAL := 0.0;
+    PV_Flow_Prev   : REAL := 0.0;  // PV aliran sebelumnya - Derivative on Measurement
     Int_Inner_Sum  : REAL := 0.0;
 END_VAR
 
@@ -168,8 +169,9 @@ BEGIN
         Int_Outer_Sum := Int_Outer_Sum + (Err_Out * Cycle);
         I_Out   := Ki_Outer * Int_Outer_Sum;
         
-        D_Out   := Kd_Outer * (Err_Out - Err_Outer_Prev) / Cycle;
-        
+        // Derivative on Measurement pada loop warna
+        D_Out   := -Kd_Outer * (PV_Color - PV_Color_Prev) / Cycle;
+
         Out_SP  := P_Out + I_Out + D_Out;
         
         // Batasi setpoint aliran pewarna ke rentang fisik katup (0 - 12 L/min)
@@ -182,8 +184,8 @@ BEGIN
         ELSE
             Flow_SP := Out_SP;
         END_IF;
-        
-        Err_Outer_Prev := Err_Out;
+
+        PV_Color_Prev := PV_Color;  // Simpan PV warna untuk siklus berikutnya
     END_IF;
 
     // 2. Loop Dalam (Inner/Secondary PID): Mengontrol Aliran Pewarna
@@ -205,8 +207,9 @@ BEGIN
         Int_Inner_Sum := Int_Inner_Sum + (Err_In * Cycle);
         I_In   := Ki_Inner * Int_Inner_Sum;
         
-        D_In   := Kd_Inner * (Err_In - Err_Inner_Prev) / Cycle;
-        
+        // Derivative on Measurement pada loop aliran
+        D_In   := -Kd_Inner * (PV_Flow - PV_Flow_Prev) / Cycle;
+
         PID_Out := P_In + I_In + D_In;
         
         // Batasi output katup kendali ke 0 - 100%
@@ -219,8 +222,8 @@ BEGIN
         ELSE
             Valve_Out := PID_Out;
         END_IF;
-        
-        Err_Inner_Prev := Err_In;
+
+        PV_Flow_Prev := PV_Flow;  // Simpan PV aliran untuk siklus berikutnya
     END_IF;
 
     // 3. Validasi Keberhasilan Kontrol Warna (Toleransi ketat ±5% pada Cascade)

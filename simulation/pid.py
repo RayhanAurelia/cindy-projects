@@ -8,27 +8,33 @@ class PID:
         
         self.integral = 0.0
         self.last_error = 0.0
-        
+        self.last_pv = None      # Previous measurement for derivative-on-measurement
+
     def reset(self):
         self.integral = 0.0
         self.last_error = 0.0
-        
+        self.last_pv = None
+
     def compute(self, pv, dt=0.1):
         if dt <= 0.0:
             dt = 0.1
-            
+
         error = self.setpoint - pv
-        
+
         # Proportional
         p_term = self.kp * error
-        
+
         # Integral with anti-windup clamping
         self.integral += error * dt
         i_term = self.ki * self.integral
-        
-        # Derivative
-        d_term = self.kd * (error - self.last_error) / dt
-        
+
+        # Derivative on Measurement (PV), bukan pada error.
+        # Mencegah "derivative kick" saat setpoint berubah (mis. setpoint rasio yang
+        # ikut fluktuasi/noise laju susu) dan meredam penguatan noise pengukuran.
+        if self.last_pv is None:
+            self.last_pv = pv  # Inisialisasi agar tidak ada lonjakan derivatif di langkah pertama
+        d_term = -self.kd * (pv - self.last_pv) / dt
+
         # Calculate raw output
         output = p_term + i_term + d_term
         
@@ -42,6 +48,7 @@ class PID:
             output = min_limit
             # Clamping integral to prevent windup
             self.integral -= error * dt
-            
+
         self.last_error = error
+        self.last_pv = pv  # Simpan pengukuran untuk perhitungan derivatif berikutnya
         return output
