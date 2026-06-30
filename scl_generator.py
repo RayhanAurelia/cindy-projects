@@ -2,7 +2,7 @@ def get_ratio_control_scl():
     return """FUNCTION_BLOCK FB_RatioControl
 TITLE = 'Ratio Control for Milk and Color Mixing'
 VERSION : '1.0'
-AUTHOR  : 'cindy dan teran'
+AUTHOR  : 'Cindy dan Terran'
 
 VAR_INPUT
     PV_WildFlow   : REAL;  // Laju aliran susu (Wild Flow) [L/min]
@@ -108,7 +108,7 @@ def get_cascade_control_scl():
     return """FUNCTION_BLOCK FB_CascadeControl
 TITLE = 'Cascade Control for Milk Coloring Process'
 VERSION : '1.0'
-AUTHOR  : 'cindy dan teran'
+AUTHOR  : 'Cindy dan Terran'
 
 VAR_INPUT
     PV_Color      : REAL;  // Nilai pembacaan sensor warna TCS3200 (0-255)

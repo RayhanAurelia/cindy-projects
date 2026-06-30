@@ -16,6 +16,15 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+st.markdown("""
+<style>
+/* Hilangkan tombol collapse sidebar */
+[data-testid="stSidebarCollapseButton"] {
+    display: none !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # Load CSS
 with open("assets/style.css") as f:
     st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
@@ -100,25 +109,25 @@ btn_cascade_type = "primary" if st.session_state.current_page == "cascade" else 
 btn_scl_type = "primary" if st.session_state.current_page == "scl" else "secondary"
 btn_handbook_type = "primary" if st.session_state.current_page == "handbook" else "secondary"
 
-if st.sidebar.button("📊 Sistem Kontrol Rasio", type=btn_ratio_type, use_container_width=True):
+if st.sidebar.button("Sistem Kontrol Rasio", type=btn_ratio_type, icon=":material/monitoring:", use_container_width=True):
     st.session_state.current_page = "ratio"
     st.rerun()
 
-if st.sidebar.button("🔄 Sistem Kontrol Bertingkat", type=btn_cascade_type, use_container_width=True):
+if st.sidebar.button("Sistem Kontrol Bertingkat", type=btn_cascade_type, icon=":material/schema:", use_container_width=True):
     st.session_state.current_page = "cascade"
     st.rerun()
 
-if st.sidebar.button("📄 Template Kode SCL PCS 7", type=btn_scl_type, use_container_width=True):
+if st.sidebar.button("Template Kode SCL PCS 7", type=btn_scl_type, icon=":material/code:", use_container_width=True):
     st.session_state.current_page = "scl"
     st.rerun()
 
-if st.sidebar.button("📘 Panduan Sistem Kontrol", type=btn_handbook_type, use_container_width=True):
+if st.sidebar.button("Panduan Sistem Kontrol", type=btn_handbook_type, icon=":material/menu_book:", use_container_width=True):
     st.session_state.current_page = "handbook"
     st.rerun()
 
 st.sidebar.markdown("---")
 # Manual Clear Caches button inside sidebar as requested
-if st.sidebar.button("🧹 Hapus Cache Fungsi (Clear Cache)", use_container_width=True):
+if st.sidebar.button("Hapus Cache", icon=":material/restart_alt:", use_container_width=True):
     st.cache_data.clear()
     st.cache_resource.clear()
     st.toast("Cache berhasil dibersihkan!")
@@ -152,11 +161,11 @@ def apply_cascade_preset(color, kp_out, ki_out, kd_out, kp_in, ki_in, kd_in, dis
 # PAGE: RATIO CONTROL
 # ----------------------------------------------------
 if st.session_state.current_page == "ratio":
-    st.markdown("<h1 style='color: #0f172a; font-weight: 700;'>📊 Sistem Kontrol Rasio (Ratio Control)</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='color: #0f172a; font-weight: 700;'>Sistem Kontrol Rasio (Ratio Control)</h1>", unsafe_allow_html=True)
     st.markdown(
         "Sistem Kontrol Rasio menjaga perbandingan tetap antara laju aliran **Susu (Wild Flow)** "
         "dan laju aliran **Pewarna (Slave Flow)**. Logika ini secara otomatis menyesuaikan laju aliran pewarna "
-        "mengikuti fluktuasi laju susu agar kualitas pencampuran tetap konsisten."
+        "mengikuti fluktuasi laju susu agar kualitas pencampuran tetap konsisten"
     )
     st.markdown("---")
     
@@ -167,22 +176,22 @@ if st.session_state.current_page == "ratio":
     with col1:
         # Template Preset Buttons for Fast Demo
         with st.container(border=True):
-            st.markdown("<h4 style='margin-top:0; font-weight: 600;'>⚡ Presets & Skenario Cepat</h4>", unsafe_allow_html=True)
-            st.markdown("<small style='color: #64748b;'>Pilih template skenario langsung untuk memulai simulasi:</small>", unsafe_allow_html=True)
+            st.markdown("<h4 style='margin-top:0; font-weight: 600;'>Presets & Skenario Simulasi</h4>", unsafe_allow_html=True)
+            st.markdown("<small style='color: #64748b;'>Pilih template skenario dibawah ini : </small>", unsafe_allow_html=True)
             
-            if st.button("🍼 1. Rasio Ringan (Rasio 5%)", use_container_width=True):
+            if st.button("1. Rasio Ringan (Rasio 5%)", use_container_width=True):
                 apply_ratio_preset(0.05, 2.5, 1.5, 0.1, False, False)
                 st.rerun()
                 
-            if st.button("🍓 2. Rasio Pekat (Rasio 15%)", use_container_width=True):
+            if st.button("2. Rasio Pekat (Rasio 15%)", use_container_width=True):
                 apply_ratio_preset(0.15, 2.5, 1.5, 0.1, False, False)
                 st.rerun()
                 
-            if st.button("🌊 3. Tes Gangguan Laju Susu", use_container_width=True):
+            if st.button("3. Tes Gangguan Laju Susu", use_container_width=True):
                 apply_ratio_preset(0.10, 2.5, 1.5, 0.1, True, False)
                 st.rerun()
                 
-            if st.button("⚠️ 4. Tes Gangguan Valve Tersumbat", use_container_width=True):
+            if st.button("4. Tes Gangguan Valve Tersumbat", use_container_width=True):
                 apply_ratio_preset(0.10, 3.5, 2.0, 0.15, False, True)
                 st.rerun()
         
@@ -190,7 +199,7 @@ if st.session_state.current_page == "ratio":
         
         # Manual Adjustments
         with st.container(border=True):
-            st.markdown("<h4 style='margin-top:0; font-weight: 600;'>🛠️ Parameter Kontrol</h4>", unsafe_allow_html=True)
+            st.markdown("<h4 style='margin-top:0; font-weight: 600;'>Parameter Kontrol</h4>", unsafe_allow_html=True)
             
             target_ratio = st.slider("Target Rasio (Pewarna : Susu)", 0.02, 0.20, key="ratio_target_ratio")
             sim.target_ratio = target_ratio
@@ -219,15 +228,15 @@ if st.session_state.current_page == "ratio":
             st.markdown("---")
             btn_col1, btn_col2 = st.columns(2)
             with btn_col1:
-                if st.button("▶ Start", use_container_width=True):
+                if st.button("Start", use_container_width=True):
                     st.session_state.sim_running = True
                     st.rerun()
             with btn_col2:
-                if st.button("⏸ Pause", use_container_width=True):
+                if st.button("Pause", use_container_width=True):
                     st.session_state.sim_running = False
                     st.rerun()
                     
-            if st.button("🔄 Reset Jalur", use_container_width=True):
+            if st.button("Reset Jalur", use_container_width=True):
                 sim.reset()
                 st.session_state.sim_running = False
                 st.rerun()
@@ -280,12 +289,12 @@ if st.session_state.current_page == "ratio":
             """, unsafe_allow_html=True)
             
         with m_col4:
-            val_text = "<span class='status-badge status-ok'>✓ SESUAI</span>" if is_ok else "<span class='status-badge status-error'>✗ DEVIASI</span>"
+            val_text = "<span class='status-badge status-ok'>SESUAI</span>" if is_ok else "<span class='status-badge status-error'>DEVIASI</span>"
             st.markdown(f"""
             <div class='metric-card'>
                 <div class='metric-title'>Sensor TCS3200</div>
                 <div class='metric-value'>{curr_color:.1f}</div>
-                <div class='metric-unit'>Intensitas Campuran | {val_text}</div>
+                <div class='metric-unit'>Intensitas Campuran : {val_text}</div>
             </div>
             """, unsafe_allow_html=True)
             
@@ -303,7 +312,7 @@ if st.session_state.current_page == "ratio":
             "<small style='color: #64748b; display:block; margin-bottom:15px;'>"
             "Visualisasi di bawah menyimulasikan aliran susu putih bersih (kiri) bertemu cairan pewarna hitam pekat (kanan) "
             "masuk ke dalam tangki pencampuran. <b>Warna cairan di dalam tangki akan berubah warna secara dinamis "
-            "mengikuti perbandingan aktual kedua bahan!</b></small>", unsafe_allow_html=True
+            "mengikuti perbandingan aktual kedua bahan</b></small>", unsafe_allow_html=True
         )
         
         viz_html = f"""
@@ -384,17 +393,17 @@ if st.session_state.current_page == "ratio":
             )
             st.plotly_chart(fig2, use_container_width=True)
         else:
-            st.info("Tekan tombol '▶ Start' atau klik salah satu Preset di kiri untuk menjalankan simulasi.")
+            st.info("Tekan tombol '▶ Start' atau klik salah satu Preset di kiri untuk menjalankan simulasi")
 
 # ----------------------------------------------------
 # PAGE: CASCADE CONTROL
 # ----------------------------------------------------
 elif st.session_state.current_page == "cascade":
-    st.markdown("<h1 style='color: #0f172a; font-weight: 700;'>🔄 Sistem Kontrol Bertingkat (Cascade Control)</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='color: #0f172a; font-weight: 700;'>Sistem Kontrol Bertingkat (Cascade Control)</h1>", unsafe_allow_html=True)
     st.markdown(
         "Sistem Kontrol Bertingkat menghubungkan dua loop PID secara seri. **Loop Luar (Primary)** mengontrol "
         "warna produk akhir berdasarkan data sensor TCS3200 dengan mengeluarkan nilai Target Aliran. **Loop Dalam (Secondary)** "
-        "mengendalikan katup aliran pewarna agar secepat mungkin menyamai target aliran tersebut untuk meredam gangguan jalur."
+        "mengendalikan katup aliran pewarna agar secepat mungkin menyamai target aliran tersebut untuk meredam gangguan jalur"
     )
     st.markdown("---")
     
@@ -405,22 +414,22 @@ elif st.session_state.current_page == "cascade":
     with col1:
         # Template Preset Buttons for Fast Demo
         with st.container(border=True):
-            st.markdown("<h4 style='margin-top:0; font-weight: 600;'>⚡ Presets & Skenario Cepat</h4>", unsafe_allow_html=True)
-            st.markdown("<small style='color: #64748b;'>Pilih template skenario langsung untuk memulai simulasi:</small>", unsafe_allow_html=True)
+            st.markdown("<h4 style='margin-top:0; font-weight: 600;'>Presets & Skenario Simulasi</h4>", unsafe_allow_html=True)
+            st.markdown("<small style='color: #64748b;'>Pilih template skenario dibawah ini :</small>", unsafe_allow_html=True)
             
-            if st.button("⚖️ 1. Target Warna Ringan (50)", use_container_width=True):
+            if st.button("1. Target Warna Ringan (50)", use_container_width=True):
                 apply_cascade_preset(50.0, 0.10, 0.02, 0.0, 2.0, 1.2, 0.05, False, False)
                 st.rerun()
                 
-            if st.button("☕ 2. Target Warna Gelap (120)", use_container_width=True):
+            if st.button("2. Target Warna Gelap (120)", use_container_width=True):
                 apply_cascade_preset(120.0, 0.18, 0.04, 0.01, 2.8, 1.8, 0.10, False, False)
                 st.rerun()
                 
-            if st.button("🌪️ 3. Tes Redam Tekanan Drop", use_container_width=True):
+            if st.button("3. Tes Redam Tekanan Drop", use_container_width=True):
                 apply_cascade_preset(100.0, 0.15, 0.03, 0.01, 2.5, 1.5, 0.10, False, True)
                 st.rerun()
                 
-            if st.button("🥤 4. Gangguan Aliran & Susu", use_container_width=True):
+            if st.button("4. Gangguan Aliran & Susu", use_container_width=True):
                 apply_cascade_preset(100.0, 0.20, 0.04, 0.01, 3.0, 2.0, 0.10, True, True)
                 st.rerun()
         
@@ -428,7 +437,7 @@ elif st.session_state.current_page == "cascade":
         
         # Manual Adjustments
         with st.container(border=True):
-            st.markdown("<h4 style='margin-top:0; font-weight: 600;'>🛠️ Parameter Kontrol</h4>", unsafe_allow_html=True)
+            st.markdown("<h4 style='margin-top:0; font-weight: 600;'>Parameter Kontrol</h4>", unsafe_allow_html=True)
             
             target_color = st.slider("Target Intensitas Warna (0-200)", 20.0, 200.0, key="cascade_target_color")
             sim.target_color = target_color
@@ -463,15 +472,15 @@ elif st.session_state.current_page == "cascade":
             st.markdown("---")
             btn_col1, btn_col2 = st.columns(2)
             with btn_col1:
-                if st.button("▶ Start", use_container_width=True):
+                if st.button("Start", use_container_width=True):
                     st.session_state.sim_running = True
                     st.rerun()
             with btn_col2:
-                if st.button("⏸ Pause", use_container_width=True):
+                if st.button("Pause", use_container_width=True):
                     st.session_state.sim_running = False
                     st.rerun()
                     
-            if st.button("🔄 Reset Jalur", use_container_width=True):
+            if st.button("Reset Jalur", use_container_width=True):
                 sim.reset()
                 st.session_state.sim_running = False
                 st.rerun()
@@ -522,7 +531,7 @@ elif st.session_state.current_page == "cascade":
             """, unsafe_allow_html=True)
             
         with m_col4:
-            val_text = "<span class='status-badge status-ok'>✓ STABIL</span>" if is_ok else "<span class='status-badge status-error'>✗ DEVIASI</span>"
+            val_text = "<span class='status-badge status-ok'>STABIL</span>" if is_ok else "<span class='status-badge status-error'>DEVIASI</span>"
             st.markdown(f"""
             <div class='metric-card'>
                 <div class='metric-title'>Sensor TCS3200</div>
@@ -545,7 +554,7 @@ elif st.session_state.current_page == "cascade":
             "<small style='color: #64748b; display:block; margin-bottom:15px;'>"
             "Pada mode Bertingkat (Cascade), loop PID luar membaca sensor TCS3200 downstream untuk terus menghitung "
             "laju aliran pewarna baru yang ideal. <b>Warna cairan di dalam tangki berubah warna secara dinamis "
-            "mengikuti pencampuran susu (putih) dan pewarna (hitam) secara real-time!</b></small>", unsafe_allow_html=True
+            "mengikuti pencampuran susu (putih) dan pewarna (hitam) secara real-time</b></small>", unsafe_allow_html=True
         )
         
         viz_html = f"""
@@ -642,16 +651,14 @@ elif st.session_state.current_page == "cascade":
             )
             st.plotly_chart(fig3, use_container_width=True)
         else:
-            st.info("Tekan tombol '▶ Start' atau klik salah satu Preset di kiri untuk menjalankan simulasi.")
+            st.info("Tekan tombol '▶ Start' atau klik salah satu Preset di kiri untuk menjalankan simulasi")
 
-# ----------------------------------------------------
-# PAGE: CODE SCL GENERATOR
-# ----------------------------------------------------
+
 elif st.session_state.current_page == "scl":
-    st.markdown("<h1 style='color: #0f172a; font-weight: 700;'>📄 Template Kode SCL Siemens PCS 7</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='color: #0f172a; font-weight: 700;'>Template Kode SCL Siemens PCS 7</h1>", unsafe_allow_html=True)
     st.markdown(
         "Berikut adalah kode program SCL (Structured Control Language) terstruktur untuk Siemens PCS 7 "
-        "(atau STEP 7 / TIA Portal) yang mengimplementasikan logika kontrol yang sama dengan simulator."
+        "(atau STEP 7 / TIA Portal) yang mengimplementasikan logika kontrol yang sama dengan simulator"
     )
     st.markdown("---")
     
@@ -661,7 +668,7 @@ elif st.session_state.current_page == "scl":
         st.markdown("### Kode SCL: FB_RatioControl")
         st.code(scl_generator.get_ratio_control_scl(), language="pascal")
         st.info(
-            "💡 **Cara Integrasi di Siemens PCS 7:**\n"
+            "**Cara Integrasi di Siemens PCS 7:**\n"
             "1. Buat source file SCL baru di TIA Portal / STEP 7.\n"
             "2. Tempel kode di atas ke dalamnya.\n"
             "3. Lakukan kompilasi untuk menghasilkan Function Block (FB).\n"
@@ -672,17 +679,15 @@ elif st.session_state.current_page == "scl":
         st.markdown("### Kode SCL: FB_CascadeControl")
         st.code(scl_generator.get_cascade_control_scl(), language="pascal")
         st.info(
-            "💡 **Mengapa menggunakan Blok Tunggal untuk Cascade?**\n"
+            "**Mengapa menggunakan Blok Tunggal untuk Cascade?**\n"
             "Menggabungkannya dalam satu FB SCL sangat baik untuk menghemat memori program (work memory PLC), "
             "menyederhanakan penanganan Anti-Windup antar-loop, serta memastikan propagasi mode Manual/Auto "
             "antara loop luar dan dalam berjalan sinkron."
         )
 
-# ----------------------------------------------------
-# PAGE: HANDBOOK
-# ----------------------------------------------------
+
 elif st.session_state.current_page == "handbook":
-    st.markdown("<h1 style='color: #0f172a; font-weight: 700;'>📘 Panduan & Konsep Sistem Kontrol</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='color: #0f172a; font-weight: 700;'>Panduan & Konsep Sistem Kontrol</h1>", unsafe_allow_html=True)
     st.markdown("---")
     
     st.markdown("""
